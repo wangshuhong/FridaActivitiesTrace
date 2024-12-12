@@ -1,133 +1,147 @@
 var context = null;
 var packageName = null;
+var class_method = "android.app.ActivityThread";
+
 var lastForegroundActivity = null;
 var startTime = null;
 var timer = null;
-
-const pageSwitchMap = {};// ÓÃÓÚ´æ´¢Ò³ÃæÌø×ª¹ØÏµµÄ¶ÔÏó£¬¸ñÊ½Èç "A":{ "Switch":{"B","C"}}
+const pageSwitchMap = {};// ç”¨äºå­˜å‚¨é¡µé¢è·³è½¬å…³ç³»çš„å¯¹è±¡ï¼Œæ ¼å¼å¦‚ "A":{ "Switch":{"B","C"}}
 const filePath = './page_switch_history.json';
-const checkFrequency = 1000  //¼ì²éÆµÂÊ 1s
-const totalTime = 60000;     //¼à¿ØÊ±³¤ 60s 
+const checkFrequency = 1000  //æ£€æŸ¥é¢‘ç‡ 1s
+const totalTime = 60000;     //ç›‘æ§æ—¶é•¿ 60s 
 
-//À©Õ¹console
+//æ‰©å±•console
 (function () {
-    let Color = { RESET: "\x1b[39;49;00m", Black: "0;01", Blue: "4;01", Cyan: "6;01", Gray: "7;11", "Green": "2;01", Purple: "5;01", Red: "1;01", Yellow: "3;01" };
-    let LightColor = { RESET: "\x1b[39;49;00m", Black: "0;11", Blue: "4;11", Cyan: "6;11", Gray: "7;01", "Green": "2;11", Purple: "5;11", Red: "1;11", Yellow: "3;11" };
-    var colorPrefix = '\x1b[3', colorSuffix = 'm';
-    for (let c in Color) {
-        if (c == "RESET") continue;
-        console[c] = function (message) {
-            console.log(colorPrefix + Color[c] + colorSuffix + message + Color.RESET);
-        }
-        console["Light" + c] = function (message) {
-            console.log(colorPrefix + LightColor[c] + colorSuffix + message + Color.RESET);
-        }
-    }
+  let Color = { RESET: "\x1b[39;49;00m", Black: "0;01", Blue: "4;01", Cyan: "6;01", Gray: "7;11", "Green": "2;01", Purple: "5;01", Red: "1;01", Yellow: "3;01" };
+  let LightColor = { RESET: "\x1b[39;49;00m", Black: "0;11", Blue: "4;11", Cyan: "6;11", Gray: "7;01", "Green": "2;11", Purple: "5;11", Red: "1;11", Yellow: "3;11" };
+  var colorPrefix = '\x1b[3', colorSuffix = 'm';
+  for (let c in Color) {
+      if (c == "RESET") continue;
+      console[c] = function (message) {
+          console.log(colorPrefix + Color[c] + colorSuffix + message + Color.RESET);
+      }
+      console["Light" + c] = function (message) {
+          console.log(colorPrefix + LightColor[c] + colorSuffix + message + Color.RESET);
+      }
+  }
 })();
-
+//è·å–åŒ…å
 function getContextPackageName() {
-    context = Java.use("android.app.ActivityThread").currentApplication().getApplicationContext();
-    packageName = context.getPackageName();
+  context = Java.use("android.app.ActivityThread").currentApplication().getApplicationContext();
+  packageName = context.getPackageName();
 }
 
-
-//»ñÈ¡ÄÚ´æÖĞËùÓĞactivity
+//è·å–å†…å­˜ä¸­æ‰€æœ‰activity
 function getActivities() {
-    const GET_ACTIVITIES = 0x00000001;
-    var PackageManager = context.getPackageManager();
-    const packageInfo = PackageManager.getPackageInfo(packageName, GET_ACTIVITIES);
-    //»ñÈ¡È«²¿µÄactivities
-    const activityInfos = packageInfo.activities.value.map((activityInfo) => {
-        const activityName = activityInfo.name.value;
-        if(pageSwitchMap[activityName]){
-            pageSwitchMap[activityName]["LaunchMode"].add(activityInfo.launchMode.value);//Æô¶¯Ä£Ê½
-            pageSwitchMap[activityName]["Exported"].add(activityInfo.exported.value);//µ¼³öÄ£Ê½
-            let permissions;
-            if (activityInfo.permissions) {
-                permissions = activityInfo.permissions.map((perm) => perm.name.value);
-            } else {
-                permissions = [];
-            }
-            pageSwitchMap[activityName]["Permissions"].add(permissions);//È¨ÏŞ
-        }
-    });
+  const GET_ACTIVITIES = 0x00000001;
+  var PackageManager = context.getPackageManager();
+  const packageInfo = PackageManager.getPackageInfo(packageName, GET_ACTIVITIES);
+  //è·å–å…¨éƒ¨çš„activities
+  const activityInfos = packageInfo.activities.value.map((activityInfo) => {
+      const activityName = activityInfo.name.value;
+      if(pageSwitchMap[activityName]){
+          pageSwitchMap[activityName]["LaunchMode"].add(activityInfo.launchMode.value);//å¯åŠ¨æ¨¡å¼
+          pageSwitchMap[activityName]["Exported"].add(activityInfo.exported.value);//å¯¼å‡ºæ¨¡å¼
+          let permissions;
+          if (activityInfo.permissions) {
+              permissions = activityInfo.permissions.map((perm) => perm.name.value);
+          } else {
+              permissions = [];
+          }
+          pageSwitchMap[activityName]["Permissions"].add(permissions);//æƒé™
+      }
+  });
+}
+
+// å®šä¹‰å‡½æ•°Rï¼Œç”¨äºè·å–å®‰å“åº”ç”¨ä¸­æŒ‡å®šèµ„æºçš„æ ‡è¯†ç¬¦
+function R(name, type) {
+  // é€šè¿‡ä¸Šä¸‹æ–‡å¯¹è±¡è·å–èµ„æºç®¡ç†å¯¹è±¡Resourcesï¼Œå¹¶è°ƒç”¨getIdentifieræ–¹æ³•æ¥è·å–æŒ‡å®šèµ„æºçš„æ ‡è¯†ç¬¦
+  return context.getResources().getIdentifier(name, type, packageName);
 }
 
 
-// ¶¨Òåº¯ÊıR£¬ÓÃÓÚ»ñÈ¡°²×¿Ó¦ÓÃÖĞÖ¸¶¨×ÊÔ´µÄ±êÊ¶·û
-function R(name, type) {
-    // Í¨¹ıÉÏÏÂÎÄ¶ÔÏó»ñÈ¡×ÊÔ´¹ÜÀí¶ÔÏóResources£¬²¢µ÷ÓÃgetIdentifier·½·¨À´»ñÈ¡Ö¸¶¨×ÊÔ´µÄ±êÊ¶·û
-    return context.getResources().getIdentifier(name, type, packageName);
+function checkForegroundActivityChange(currentActivity) {
+  if (currentActivity && currentActivity!== lastForegroundActivity) {
+      // æ‰“å°é¡µé¢å˜åŒ–
+      console.Blue(lastForegroundActivity);
+      console.Yellow("        ======> " + currentActivity);
+      
+      if (!pageSwitchMap[lastForegroundActivity]) {
+          pageSwitchMap[lastForegroundActivity] = {
+              "Permissions":new Set(),    /*æƒé™ */
+              "LaunchMode":new Set(),     /*å¯åŠ¨æ¨¡å¼ */
+              "Exported":new Set(),       /*å¯¼å‡ºå±æ€§ */
+              "Switch": new Set()         /*è·³è½¬ */
+          };
+      }
+      pageSwitchMap[lastForegroundActivity]["Switch"].add(currentActivity);
+      
+      lastForegroundActivity = currentActivity;
+  }
+  const currentTime = Date.now();
+  const elapsedTime = currentTime - startTime;
+  if (elapsedTime >= totalTime) {
+      clearInterval(timer);
+      console.Red("Monitoring has ended after 1 minute.");
+      
+      //è¡¥å……å¡«å…¥activitiesä¿¡æ¯
+      getActivities();
+
+      // å°†é¡µé¢è·³è½¬å…³ç³»å¯¹è±¡è½¬æ¢ä¸ºç¬¦åˆè¦æ±‚çš„æ ¼å¼çš„å¯¹è±¡ï¼ˆå°†Setè½¬æ¢ä¸ºæ•°ç»„ï¼‰
+      const formattedPageSwitchMap = {};
+      for (const key in pageSwitchMap) {
+          formattedPageSwitchMap[key] = {
+              "Switch": Array.from(pageSwitchMap[key]["Switch"]),
+              "Permissions": Array.from(pageSwitchMap[key]["Permissions"]),
+              "LaunchMode": Array.from(pageSwitchMap[key]["LaunchMode"]),
+              "Exported": Array.from(pageSwitchMap[key]["Exported"])
+          };
+      }
+      
+      // è½¬æ¢ä¸ºJSONå­—ç¬¦ä¸²å¹¶æ‰“å°ï¼ˆå¯æ”¹ä¸ºå†™å…¥æ–‡ä»¶ç­‰æ“ä½œï¼‰
+      const historyJson = JSON.stringify(formattedPageSwitchMap);
+      console.Blue("Switch(JSON):");
+      console.log(historyJson);
+
+      //é‡æ–°è®¡ç®—
+      startTime = Date.now();
+      lastForegroundActivity = GetNowActivityName();//åˆå§‹åŒ–
+      pageSwitchMap = {};
+  }
 }
 
 function GetNowActivityName() {
-    var activityThread = Java.use("android.app.ActivityThread");
-    var activityClientRecord = Java.use("android.app.ActivityThread$ActivityClientRecord");
+  var activityThread = Java.use("android.app.ActivityThread");
+  var activityClientRecord = Java.use("android.app.ActivityThread$ActivityClientRecord");
 
-    const currentActivityThread = activityThread.currentActivityThread();
-    const activityRecords = currentActivityThread.mActivities.value.values().toArray();
-    for (const i of activityRecords) {
-        const activityRecord = Java.cast(i, activityClientRecord);
-        if (!activityRecord.paused.value) {
-            return Java.cast(Java.cast(activityRecord, activityClientRecord).activity.value, Java.use("android.app.Activity")).$className;
-        }
-    }
-    return null;
+  const currentActivityThread = activityThread.currentActivityThread();
+  const activityRecords = currentActivityThread.mActivities.value.values().toArray();
+  for (const i of activityRecords) {
+      const activityRecord = Java.cast(i, activityClientRecord);
+      if (!activityRecord.paused.value) {
+          return Java.cast(Java.cast(activityRecord, activityClientRecord).activity.value, Java.use("android.app.Activity")).$className;
+      }
+  }
+  return null;
 }
 
-function checkForegroundActivityChange() {
-    var currentActivity = GetNowActivityName();
-    if (currentActivity && currentActivity!== lastForegroundActivity) {
-        // ´òÓ¡Ò³Ãæ±ä»¯
-        console.Blue(lastForegroundActivity);
-        console.Yellow("        ======> " + currentActivity);
-        
-        if (!pageSwitchMap[lastForegroundActivity]) {
-            pageSwitchMap[lastForegroundActivity] = {
-                "Permissions":new Set(),    /*È¨ÏŞ */
-                "LaunchMode":new Set(),     /*Æô¶¯Ä£Ê½ */
-                "Exported":new Set(),       /*µ¼³öÊôĞÔ */
-                "Switch": new Set()         /*Ìø×ª */
-            };
-        }
-        pageSwitchMap[lastForegroundActivity]["Switch"].add(currentActivity);
-        
-        lastForegroundActivity = currentActivity;
-    }
-    const currentTime = Date.now();
-    const elapsedTime = currentTime - startTime;
-    if (elapsedTime >= totalTime) {
-        clearInterval(timer);
-        console.Red("Monitoring has ended after 1 minute.");
-        
-        //²¹³äÌîÈëactivitiesĞÅÏ¢
-        getActivities();
 
-        // ½«Ò³ÃæÌø×ª¹ØÏµ¶ÔÏó×ª»»Îª·ûºÏÒªÇóµÄ¸ñÊ½µÄ¶ÔÏó£¨½«Set×ª»»ÎªÊı×é£©
-        const formattedPageSwitchMap = {};
-        for (const key in pageSwitchMap) {
-            formattedPageSwitchMap[key] = {
-                "Switch": Array.from(pageSwitchMap[key]["Switch"]),
-                "Permissions": Array.from(pageSwitchMap[key]["Permissions"]),
-                "LaunchMode": Array.from(pageSwitchMap[key]["LaunchMode"]),
-                "Exported": Array.from(pageSwitchMap[key]["Exported"])
-            };
-        }
-        
-        // ×ª»»ÎªJSON×Ö·û´®²¢´òÓ¡£¨¿É¸ÄÎªĞ´ÈëÎÄ¼şµÈ²Ù×÷£©
-        const historyJson = JSON.stringify(formattedPageSwitchMap);
-        console.Blue("Switch(JSON):");
-        console.log(historyJson);
+function main(){
+  console.Purple("==================Exec Start==================");
+  getContextPackageName();
+  startTime = Date.now();
+  lastForegroundActivity = GetNowActivityName();//åˆå§‹åŒ–
+
+  //hook activityå¯åŠ¨
+  Java.perform(function(){
+    Java.use(class_method).performLaunchActivity.implementation = function(r,customIntent){
+      var activity = this.performLaunchActivity(r,customIntent);
+      //é€šè¿‡activityå®ä¾‹è·å–ä¿¡æ¯
+      console.Blue(activity.getApplication()); //æ‹¿åˆ°Application
+      checkForegroundActivityChange(activity.getIntent().getComponent().getClassName());
+      return activity;
     }
+  })
 }
 
-function main() {
-    console.Purple("==================Exec Start==================");
-    Java.perform(function () {
-        getContextPackageName();
-        lastForegroundActivity = GetNowActivityName();//³õÊ¼»¯
-        startTime = Date.now();
-        timer = setInterval(checkForegroundActivityChange, 1000);
-    })
-}
 setImmediate(main);
